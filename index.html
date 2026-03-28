@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DentalAlign | Pro Monitor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-50 font-sans">
+
+    <nav class="bg-white shadow-sm border-b p-4 mb-6">
+        <div class="max-w-5xl mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold text-blue-600">Dental<span class="text-slate-800">Align Pro</span></h1>
+            <div id="connection-badge" class="px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-600">
+                Disconnected
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-5xl mx-auto px-4 pb-12">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                <p class="text-sm font-medium text-slate-500 uppercase tracking-wider">Teeth Gap Sensor A</p>
+                <div class="flex items-baseline gap-2 mt-2">
+                    <span id="gap-a" class="text-5xl font-bold text-slate-800">0.0</span>
+                    <span class="text-slate-400 font-medium">mm</span>
+                </div>
+                <div class="w-full bg-slate-100 h-2 rounded-full mt-4">
+                    <div id="bar-a" class="bg-blue-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                <p class="text-sm font-medium text-slate-500 uppercase tracking-wider">Adjustment Pressure</p>
+                <div class="flex items-baseline gap-2 mt-2">
+                    <span id="gap-b" class="text-5xl font-bold text-slate-800">0</span>
+                    <span class="text-slate-400 font-medium">kPa</span>
+                </div>
+                <div class="w-full bg-slate-100 h-2 rounded-full mt-4">
+                    <div id="bar-b" class="bg-emerald-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+            <h2 class="text-lg font-bold text-slate-800 mb-4">Adjustment Progress History</h2>
+            <canvas id="progressChart" height="100"></canvas>
+        </div>
+    </main>
+
+    <script>
+        // --- MQTT CONFIG ---
+        const BROKER = "broker.hivemq.com";
+        const TOPIC = "dental/align/unique_id"; // MUST match ESP32 topic
+        const client = new Paho.MQTT.Client(BROKER, 8000, "dental_" + Math.random().toString(16));
+
+        // --- CHART CONFIG ---
+        const ctx = document.getElementById('progressChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Gap Width (mm)',
+                    data: [],
+                    borderColor: '#3b82f6',
+                    tension: 0.4,
+                    fill: true,
+                    backgroundColor: 'rgba(59, 130, 246, 0.05)'
+                }]
+            },
+            options: { responsive: true, scales: { y: { beginAtZero: true } } }
+        });
+
+        // --- MQTT LOGIC ---
+        client.onMessageArrived = (msg) => {
+            const data = JSON.parse(msg.payloadString);
+            
+            // Assuming your ESP sends mm values now (e.g., 0.5 to 4.0)
+            document.getElementById('gap-a').innerText = data.s1;
+            document.getElementById('gap-b').innerText = data.s2;
+            
+            // Visual Bars (assuming max value of 10 for percentage)
+            document.getElementById('bar-a').style.width = (data.s1 * 10) + "%";
+            document.getElementById('bar-b').style.width = (data.s2 * 10) + "%";
+
+            // Update Chart
+            if(chart.data.labels.length > 15) { chart.data.labels.shift(); chart.data.datasets[0].data.shift(); }
+            chart.data.labels.push(new Date().toLocaleTimeString());
+            chart.data.datasets[0].data.push(data.s1);
+            chart.update();
+        };
+
+        client.connect({
+            onSuccess: () => {
+                client.subscribe(TOPIC);
+                const badge = document.getElementById('connection-badge');
+                badge.innerText = "Live: Monitoring";
+                badge.className = "px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-600";
+            }
+        });
+    </script>
+</body>
+</html>
